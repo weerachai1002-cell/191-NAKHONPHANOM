@@ -25,6 +25,10 @@
   .chip { border:1px solid #d1d5db; border-radius:20px; padding:6px 14px; font-size:15px; cursor:pointer; background:#fff; user-select:none; transition:all .12s; white-space:nowrap; }
   .chip:hover { border-color:#93c5fd; background:#eff6ff; }
   .chip.selected { background:#7a1128; color:#fff; border-color:#7a1128; }
+  /* สภ. ที่มีเจ้าหน้าที่เวรสื่อสารติ๊กเข้าเวรแล้ว จะไฮไลท์เขียว ให้เห็นว่ายังไม่มี สภ.ไหนติ๊ก */
+  #policeGroup .chip.duty-confirmed { background:#dcfce7; border-color:#16a34a; color:#15803d; }
+  #policeGroup .chip.duty-confirmed::after { content:" ✓"; font-weight:700; }
+  #policeGroup .chip.duty-confirmed.selected { background:#16a34a; border-color:#16a34a; color:#fff; }
   /* อำเภอ group */
   .amphoe-group { border:1px solid #f0f0f0; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
   .amphoe-label { font-size:15px; font-weight:800; color:#7a1128; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; }
@@ -39,6 +43,19 @@
   .duty-station-block.expanded .duty-station-label .toggle-arrow { transform:rotate(90deg); }
   .duty-station-officers { display:none; margin-top:12px; }
   .duty-station-block.expanded .duty-station-officers { display:block; }
+  .duty-station-block.duty-confirmed { border-color:#16a34a; background:#f0fdf4; }
+  .duty-station-block.duty-confirmed .duty-station-label { color:#15803d; }
+  .duty-confirmed-badge { font-size:11px; font-weight:700; background:#16a34a; color:#fff; padding:2px 8px; border-radius:10px; margin-left:6px; }
+  .duty-summary-table { width:100%; border-collapse:collapse; margin-bottom:20px; font-size:13px; }
+  .duty-summary-table th, .duty-summary-table td { border:1px solid #e5e7eb; padding:6px 8px; text-align:left; }
+  .duty-summary-table th { background:#f9fafb; font-weight:700; color:#374151; }
+  .duty-summary-table tr.confirmed td { background:#f0fdf4; }
+  .duty-summary-table .status-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .duty-summary-table .status-yes { background:#16a34a; color:#fff; }
+  .duty-summary-table .status-no { background:#fee2e2; color:#b91c1c; }
+  .duty-station-block.duty-confirmed { border-color:#16a34a; background:#f0fdf4; }
+  .duty-station-block.duty-confirmed .duty-station-label { color:#15803d; }
+  .duty-station-block.duty-confirmed .duty-station-label::after { content:"✓ ยืนยันแล้ว"; font-size:11px; font-weight:700; background:#16a34a; color:#fff; padding:2px 8px; border-radius:10px; margin-left:6px; }
   .amphoe-group.expanded .tambon-group { display:flex; }
   /* reporter */
   .reporter-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -487,7 +504,10 @@
   <span class="field-label">อำเภอ</span>
   <input type="text" id="amphoe" placeholder="จะเติมอัตโนมัติเมื่อเลือกตำบล" readonly style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;font-size:14px;font-family:inherit;background:#f9fafb;color:#374151;">
 
-  <span class="field-label">พื้นที่รับผิดชอบ สภ. <span style="font-weight:400;color:#9ca3af;">(เลือกตำบลแล้วจะเลือกให้อัตโนมัติ ปรับเองได้)</span></span>
+  <span class="field-label">พื้นที่รับผิดชอบ สภ. <span style="font-weight:400;color:#9ca3af;">(เลือกตำบลแล้วจะเลือกให้อัตโนมัติ ปรับเองได้ — สีเขียว = สภ.ที่ติ๊กยืนยันเวรวันนี้แล้ว)</span></span>
+  <div style="text-align:right; margin-bottom:6px;">
+    <button type="button" id="resetDutyBtn" class="secondary" style="font-size:12px; padding:5px 10px;">🔄 รีเซ็ตสถานะเวร (ล้างสีเขียว)</button>
+  </div>
   <div class="chip-group" id="policeGroup">
     <span class="chip" data-val="สภ.เมืองนครพนม">เมืองนครพนม</span>
     <span class="chip" data-val="สภ.บ้านกลาง">บ้านกลาง</span>
@@ -576,7 +596,11 @@
 
     <h3 style="color:#7a1128;">📻 เบอร์โทรเวรสื่อสาร แต่ละ สภ.</h3>
     <p style="font-size:13px; color:#6b7280; margin-top:-8px;">เพิ่มรายชื่อเจ้าหน้าที่เวรสื่อสารของแต่ละ สภ. แล้วติ๊กว่าใครเข้าเวรวันนี้ จะแสดงเบอร์คนที่ติ๊กไว้ใต้เบอร์กลาง สภ. ในหน้ารับแจ้งเหตุ</p>
-    <p style="font-size:12.5px; color:#9ca3af; margin-top:-4px;">กดที่ชื่อ สภ. เพื่อดู/แก้ไขรายชื่อเวรสื่อสารของ สภ. นั้น</p>
+
+    <div style="font-weight:700; font-size:14px; color:#374151; margin:16px 0 8px;">ตารางสรุปเวรวันนี้ (ทุก สภ.)</div>
+    <div id="dutySummaryTableContainer" style="overflow-x:auto;"></div>
+
+    <p style="font-size:12.5px; color:#9ca3af; margin-top:16px;">กดที่ชื่อ สภ. ด้านล่าง เพื่อดู/แก้ไขรายชื่อเวรสื่อสารของ สภ. นั้น</p>
 
     <div id="dutyStationsList"></div>
   </div><!-- end page-settings -->
@@ -865,10 +889,12 @@ function updateStationPhoneDisplay() {
   box.textContent = `☎ ${stationName}: ${phone}`;
   box.style.display = 'block';
 
-  // แสดงเวรสื่อสารที่ติ๊กไว้ว่าเข้าเวรวันนี้ของ สภ. นี้ (ถ้ามีตั้งค่าไว้)
+  // แสดงเวรสื่อสารที่ติ๊กไว้ว่าเข้าเวรวันนี้ของ สภ. นี้ — แสดงเฉพาะตอนที่ "ยืนยันแล้ว" เท่านั้น
+  // (สอดคล้องกับปุ่มรีเซ็ต — กดรีเซ็ตแล้วกล่องนี้จะหายไปด้วย จนกว่าจะมีคนติ๊กยืนยันใหม่)
   const officers = loadDutyOfficers()[stationName] || [];
   const onDutyOfficer = officers.find(o => o.onDuty);
-  if (onDutyOfficer) {
+  const isConfirmed = !!DUTY_CONFIRMED_DATA[stationName];
+  if (onDutyOfficer && isConfirmed) {
     dutyBox.textContent = `📻 เวรสื่อสารวันนี้: ${onDutyOfficer.name} โทร. ${onDutyOfficer.phone}`;
     dutyBox.style.display = 'block';
   } else {
@@ -1375,6 +1401,12 @@ document.getElementById('copyBtn').addEventListener('click', copyText);
 document.getElementById('lineBtn').addEventListener('click', sendToLine);
 document.getElementById('clearBtn').addEventListener('click', clearAll);
 
+document.getElementById('resetDutyBtn').addEventListener('click', () => {
+  if (confirm('ล้างสถานะสีเขียว (ยืนยันเวรวันนี้) ของทุก สภ. ใช่หรือไม่?\n\nรายชื่อ/เบอร์เจ้าหน้าที่เวรที่ตั้งค่าไว้จะไม่หายไป แค่ต้องกดยืนยันเวรใหม่')) {
+    resetDutyConfirmed();
+  }
+});
+
 // ===== สลับหน้า รับแจ้งเหตุ / ตั้งค่า (ปุ่มเล็กมุมขวาล่าง) =====
 const pageIncident = document.getElementById('page-incident');
 const pageSettings = document.getElementById('page-settings');
@@ -1452,6 +1484,34 @@ function cacheDutyOfficersLocal(obj) {
 
 let DUTY_OFFICERS_DATA = loadDutyOfficersLocal(); // ใช้ค่าจาก cache ไปก่อนทันที ระหว่างรอโหลดจากส่วนกลาง
 
+// ===== สถานะ "ติ๊กเวรวันนี้แล้ว" ต่อ สภ. — แยกจากรายชื่อเจ้าหน้าที่โดยตั้งใจ =====
+// (เพื่อให้กดปุ่ม "รีเซ็ต" ล้างสีเขียวได้ โดยไม่กระทบรายชื่อ/เบอร์เวรที่ตั้งค่าไว้)
+const DUTY_CONFIRMED_STORAGE_KEY = 'dutyConfirmed_nakhonphanom191_v1';
+
+function loadDutyConfirmedLocal() {
+  try {
+    const saved = localStorage.getItem(DUTY_CONFIRMED_STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return {};
+}
+function cacheDutyConfirmedLocal(obj) {
+  try { localStorage.setItem(DUTY_CONFIRMED_STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+let DUTY_CONFIRMED_DATA = loadDutyConfirmedLocal();
+
+/**
+ * ไฮไลท์ชิพ สภ. เป็นสีเขียว ถ้า สภ.นั้นถูกติ๊กยืนยันเวรวันนี้แล้ว (จากหน้าเช็คชื่อ หรือหน้าตั้งค่า)
+ * ช่วยให้เห็นภาพรวมว่า สภ.ไหนยังไม่มีใครติ๊กเวรบ้าง
+ */
+function updateDutyConfirmedChips() {
+  document.querySelectorAll('#policeGroup .chip').forEach(chip => {
+    const stationName = chip.dataset.val;
+    chip.classList.toggle('duty-confirmed', !!DUTY_CONFIRMED_DATA[stationName]);
+  });
+}
+updateDutyConfirmedChips(); // เรียกทันทีด้วยค่าจาก cache ก่อน
+
 // ดึงข้อมูลล่าสุดจากส่วนกลาง (Apps Script) ตอนเปิดหน้าเว็บ
 fetch(APPS_SCRIPT_URL + '?action=listDutyOfficers')
   .then(res => res.json())
@@ -1467,12 +1527,25 @@ fetch(APPS_SCRIPT_URL + '?action=listDutyOfficers')
   })
   .catch(() => { /* ใช้ค่า cache ต่อไปเงียบๆ ถ้าดึงจากส่วนกลางไม่ได้ */ });
 
+fetch(APPS_SCRIPT_URL + '?action=listDutyConfirmed')
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === 'ok' && data.confirmed && typeof data.confirmed === 'object') {
+      DUTY_CONFIRMED_DATA = data.confirmed;
+      cacheDutyConfirmedLocal(DUTY_CONFIRMED_DATA);
+      updateDutyConfirmedChips();
+      if (typeof updateSettingsDutyGreenState === 'function') updateSettingsDutyGreenState();
+    }
+  })
+  .catch(() => { /* ใช้ค่า cache ต่อไปเงียบๆ ถ้าดึงจากส่วนกลางไม่ได้ */ });
+
 function loadDutyOfficers() {
   return DUTY_OFFICERS_DATA;
 }
 function saveDutyOfficers(obj) {
   DUTY_OFFICERS_DATA = obj;
   cacheDutyOfficersLocal(obj); // บันทึกเก็บไว้ในเครื่องทันที ไม่ต้องรอเน็ต
+  if (typeof renderDutySummaryTable === 'function') renderDutySummaryTable();
   // ส่งขึ้นส่วนกลางด้วย เพื่อให้เครื่องอื่นเห็นการเปลี่ยนแปลงนี้ด้วย
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
@@ -1481,10 +1554,43 @@ function saveDutyOfficers(obj) {
   }).catch(() => { /* ถ้าส่งไม่สำเร็จ อย่างน้อยเครื่องนี้ยังมีค่าที่ถูกต้องจาก cache */ });
 }
 
+/**
+ * ทำเครื่องหมายว่า สภ.นี้ "ยืนยันเวรวันนี้แล้ว" (ทำให้ชิพเป็นสีเขียว)
+ * เรียกใช้ทั้งจากหน้าตั้งค่า (เมื่อกดติ๊กเวรใน settings) และรองรับให้หน้า duty-check.html เรียกผ่าน API เดียวกันได้
+ */
+function markStationConfirmed(stationName) {
+  DUTY_CONFIRMED_DATA[stationName] = true;
+  cacheDutyConfirmedLocal(DUTY_CONFIRMED_DATA);
+  updateDutyConfirmedChips();
+  if (typeof updateSettingsDutyGreenState === 'function') updateSettingsDutyGreenState();
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'action=saveDutyConfirmed&data=' + encodeURIComponent(JSON.stringify(DUTY_CONFIRMED_DATA))
+  }).catch(() => { /* ถ้าส่งไม่สำเร็จ อย่างน้อยเครื่องนี้มีสถานะถูกต้องจาก cache */ });
+}
+
+/**
+ * ปุ่ม "รีเซ็ตสถานะเวร" — ล้างสีเขียวออกทั้งหมด (ทุก สภ.)
+ * โดยไม่แตะรายชื่อ/เบอร์เจ้าหน้าที่เวรที่ตั้งค่าไว้เลย (DUTY_OFFICERS_DATA ไม่เปลี่ยน)
+ */
+function resetDutyConfirmed() {
+  DUTY_CONFIRMED_DATA = {};
+  cacheDutyConfirmedLocal(DUTY_CONFIRMED_DATA);
+  updateDutyConfirmedChips();
+  if (typeof updateSettingsDutyGreenState === 'function') updateSettingsDutyGreenState();
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'action=saveDutyConfirmed&data=' + encodeURIComponent(JSON.stringify({}))
+  }).catch(() => { /* ถ้าส่งไม่สำเร็จ อย่างน้อยเครื่องนี้รีเซ็ตแล้วในเครื่อง */ });
+}
+
 function renderDutyStationSelect() {
   const container = document.getElementById('dutyStationsList');
   if (container.dataset.rendered) {
     renderAllDutyOfficerLists(); // แค่รีเฟรชรายชื่อในบล็อกที่กางอยู่ ไม่ต้องสร้าง DOM ใหม่
+    updateSettingsDutyGreenState();
     return;
   }
   container.innerHTML = '';
@@ -1494,7 +1600,7 @@ function renderDutyStationSelect() {
     block.dataset.station = stationName;
     block.innerHTML = `
       <div class="duty-station-label">
-        <span>${stationName}</span>
+        <span>${stationName} <span class="duty-confirmed-badge" style="display:none;">✓ ยืนยันแล้ว</span></span>
         <span class="toggle-arrow">▶</span>
       </div>
       <div class="duty-station-officers">
@@ -1519,6 +1625,59 @@ function renderDutyStationSelect() {
     container.appendChild(block);
   });
   container.dataset.rendered = '1';
+  updateSettingsDutyGreenState();
+}
+
+/**
+ * อัปเดตสถานะสีเขียว/badge "ยืนยันแล้ว" ในหน้าตั้งค่า ให้ตรงกับ DUTY_CONFIRMED_DATA
+ * เรียกทุกครั้งที่ DUTY_CONFIRMED_DATA เปลี่ยน (โหลดจากส่วนกลาง, กดยืนยันเวร, กดรีเซ็ต)
+ */
+function updateSettingsDutyGreenState() {
+  document.querySelectorAll('.duty-station-block').forEach(block => {
+    const stationName = block.dataset.station;
+    const isConfirmed = !!DUTY_CONFIRMED_DATA[stationName];
+    block.classList.toggle('duty-confirmed', isConfirmed);
+    const badge = block.querySelector('.duty-confirmed-badge');
+    if (badge) badge.style.display = isConfirmed ? 'inline-block' : 'none';
+  });
+  renderDutySummaryTable();
+}
+
+/**
+ * ตารางสรุปเวรของทุก สภ. ในหน้าตั้งค่า — เห็นภาพรวมทั้งหมดในตารางเดียว ไม่ต้องกางทีละ สภ.
+ */
+function renderDutySummaryTable() {
+  const container = document.getElementById('dutySummaryTableContainer');
+  if (!container) return;
+  const allData = loadDutyOfficers();
+
+  let rows = '';
+  Object.keys(STATION_PHONES).forEach(stationName => {
+    const officers = allData[stationName] || [];
+    const onDutyOfficer = officers.find(o => o.onDuty);
+    const isConfirmed = !!DUTY_CONFIRMED_DATA[stationName];
+    // แสดงชื่อ/เบอร์เฉพาะตอนที่ "ยืนยันแล้ว" เท่านั้น — กดรีเซ็ตแล้วชื่อในตารางนี้จะหายไปด้วย
+    // (แต่ข้อมูล onDuty ในรายชื่อเจ้าหน้าที่ข้างในยังอยู่ครบ ไม่ได้ถูกลบจริง)
+    const displayName = isConfirmed && onDutyOfficer ? onDutyOfficer.name : '-';
+    const displayPhone = isConfirmed && onDutyOfficer ? (onDutyOfficer.phone || '-') : '-';
+    rows += `
+      <tr class="${isConfirmed ? 'confirmed' : ''}">
+        <td>${stationName}</td>
+        <td>${displayName}</td>
+        <td>${displayPhone}</td>
+        <td><span class="status-badge ${isConfirmed ? 'status-yes' : 'status-no'}">${isConfirmed ? '✓ ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}</span></td>
+      </tr>
+    `;
+  });
+
+  container.innerHTML = `
+    <table class="duty-summary-table">
+      <thead>
+        <tr><th>สภ.</th><th>เวรสื่อสารวันนี้</th><th>เบอร์โทร</th><th>สถานะ</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 function renderAllDutyOfficerLists() {
@@ -1564,6 +1723,7 @@ function renderDutyOfficerRowsFor(stationName) {
       officer.onDuty = true;
       allData[stationName] = officers;
       saveDutyOfficers(allData);
+      markStationConfirmed(stationName);
       updateStationPhoneDisplay();
     });
     row.querySelector('.duty-officer-name').addEventListener('input', (e) => {
