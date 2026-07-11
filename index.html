@@ -752,11 +752,11 @@ function renderVillageSuggestions(results, query) {
 
       // ลิงก์อัตโนมัติ: ถ้าตำบลที่ได้ตรงกับชิพตำบลในฟอร์ม ให้เลือกให้เลย
       // (จะพ่วงเลือกอำเภอ/สภ. ที่รับผิดชอบให้อัตโนมัติไปในตัวตาม logic เดิม)
-      let linked = false;
+      let linkStatus = 'notfound';
       if (subdistrict) {
-        linked = selectTambonChipByName(subdistrict);
+        linkStatus = selectTambonChipByName(subdistrict, district);
       }
-      showVillageLinkFeedback(linked);
+      showVillageLinkFeedback(linkStatus);
     });
     box.appendChild(row);
   });
@@ -766,7 +766,7 @@ function renderVillageSuggestions(results, query) {
  * แจ้งเตือนใต้ช่องสถานที่เกิดเหตุ ว่าลิงก์ตำบลอัตโนมัติสำเร็จหรือไม่
  * ถ้าไม่สำเร็จ (เช่น ผลค้นหาเป็นถนน/สถานที่ที่ไม่มีข้อมูลตำบลชัดเจน) ให้แจ้งเตือนว่าต้องเลือกตำบลเอง
  */
-function showVillageLinkFeedback(linked) {
+function showVillageLinkFeedback(status) {
   let msgEl = document.getElementById('villageLinkMsg');
   if (!msgEl) {
     msgEl = document.createElement('div');
@@ -774,47 +774,80 @@ function showVillageLinkFeedback(linked) {
     msgEl.style.cssText = 'font-size:12.5px; margin-top:6px;';
     document.getElementById('village').closest('div').insertAdjacentElement('afterend', msgEl);
   }
-  if (linked) {
+  if (status === 'ambiguous') {
+    msgEl.style.color = '#b45309';
+    msgEl.textContent = '⚠ ชื่อตำบลนี้มีซ้ำกันมากกว่า 1 อำเภอ — ระบบเลือกให้เบื้องต้นแล้ว กรุณาเช็ค/แก้ตำบลด้านล่างให้ตรงกับอำเภอที่ถูกต้อง';
+  } else if (status === 'linked') {
     msgEl.style.color = '#16a34a';
     msgEl.textContent = '✓ เลือกตำบล/อำเภอ/สภ. ให้อัตโนมัติแล้ว';
   } else {
     msgEl.style.color = '#b45309';
     msgEl.textContent = '⚠ ไม่พบข้อมูลตำบลจากผลค้นหานี้ (มักเกิดกับถนน/สถานที่กว้าง) กรุณากดเลือกตำบลด้านล่างเอง';
   }
-  setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
+  setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 8000);
 }
 
 /**
  * ค้นหาชิพตำบลที่ชื่อตรงกับ subdistrict ที่ได้จากผลค้นหาแผนที่ แล้วเลือกให้อัตโนมัติ
  * เทียบแบบยืดหยุ่น (ตัดคำนำหน้า "ต./ตำบล" ออกก่อน แล้วเทียบตรงเป๊ะก่อน
  * ถ้าไม่เจอค่อยลองเทียบแบบ "มีคำนี้อยู่ในกัน" กันกรณีสะกด/เว้นวรรคไม่ตรงเป๊ะ)
+ *
+ * รองรับกรณีชื่อตำบลซ้ำกันข้ามอำเภอ (เช่น "โพนทอง" มีทั้ง อ.บ้านแพง และ อ.เรณูนคร)
+ * โดยใช้ชื่ออำเภอที่ได้จากผลค้นหามาช่วยตัดสินว่าจะเลือกชิพไหน ถ้าให้ districtName มาด้วย
+ *
+ * คืนค่าเป็นสถานะ: 'linked' (สำเร็จชัวร์) | 'ambiguous' (ชื่อซ้ำ เลือกให้เบื้องต้นแต่ควรเช็คซ้ำ) | 'notfound' (ไม่พบเลย)
  */
-function selectTambonChipByName(subdistrictName) {
+function selectTambonChipByName(subdistrictName, districtName) {
   const normalized = subdistrictName.trim().replace(/^ต\.\s*/, '').replace(/^ตำบล\s*/, '');
-  if (!normalized) return false;
+  if (!normalized) return 'notfound';
+  const normalizedDistrict = (districtName || '').trim().replace(/^อ\.\s*/, '').replace(/^อำเภอ\s*/, '');
   const chips = document.querySelectorAll('.tambon-group .chip');
 
-  // รอบแรก: เทียบชื่อตรงเป๊ะ
-  for (const chip of chips) {
-    const chipName = chip.textContent.trim();
-    if (chipName === normalized) {
-      chip.click();
-      const group = chip.closest('.amphoe-group');
-      if (group) group.classList.add('expanded');
-      return true;
-    }
+  function selectChip(chip) {
+    chip.click();
+    const group = chip.closest('.amphoe-group');
+    if (group) group.classList.add('expanded');
   }
+
+  // รอบแรก: เทียบชื่อตรงเป๊ะ — เก็บทุกชิพที่ชื่อตรงกัน (เผื่อมีชื่อซ้ำข้ามอำเภอ)
+  const exactMatches = [];
+  for (const chip of chips) {
+    if (chip.textContent.trim() === normalized) exactMatches.push(chip);
+  }
+
+  if (exactMatches.length === 1) {
+    selectChip(exactMatches[0]);
+    return 'linked';
+  }
+
+  if (exactMatches.length > 1) {
+    // ชื่อตำบลซ้ำกันมากกว่า 1 อำเภอ — ใช้ชื่ออำเภอจากผลค้นหาช่วยเลือกให้ตรง
+    let chosenChip = null;
+    if (normalizedDistrict) {
+      chosenChip = exactMatches.find(chip => {
+        const group = chip.closest('.amphoe-group');
+        const amphoeName = (group ? group.dataset.amphoe : '').replace(/^อ\.\s*/, '');
+        return amphoeName === normalizedDistrict || amphoeName.includes(normalizedDistrict) || normalizedDistrict.includes(amphoeName);
+      });
+    }
+    if (chosenChip) {
+      selectChip(chosenChip);
+      return 'linked'; // เจออำเภอที่ตรงกันจริง ถือว่าชัวร์
+    }
+    // หาไม่ได้ว่าอำเภอไหน — เลือกตัวแรกไปก่อนแต่เตือนให้เช็คซ้ำ
+    selectChip(exactMatches[0]);
+    return 'ambiguous';
+  }
+
   // รอบสอง: เทียบแบบ contains ทั้งสองทาง กันกรณีสะกด/เว้นวรรคไม่ตรงเป๊ะ
   for (const chip of chips) {
     const chipName = chip.textContent.trim();
     if (chipName.includes(normalized) || normalized.includes(chipName)) {
-      chip.click();
-      const group = chip.closest('.amphoe-group');
-      if (group) group.classList.add('expanded');
-      return true;
+      selectChip(chip);
+      return 'linked';
     }
   }
-  return false;
+  return 'notfound';
 }
 
 document.getElementById('village').addEventListener('input', debounceVillageSearch);
