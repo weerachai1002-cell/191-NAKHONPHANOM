@@ -774,10 +774,31 @@ function showVillageLinkFeedback(status) {
     msgEl.style.cssText = 'font-size:12.5px; margin-top:6px;';
     document.getElementById('village').closest('div').insertAdjacentElement('afterend', msgEl);
   }
+
   if (status === 'ambiguous') {
     msgEl.style.color = '#b45309';
-    msgEl.textContent = '⚠ ชื่อตำบลนี้มีซ้ำกันมากกว่า 1 อำเภอ — ระบบเลือกให้เบื้องต้นแล้ว กรุณาเช็ค/แก้ตำบลด้านล่างให้ตรงกับอำเภอที่ถูกต้อง';
-  } else if (status === 'linked') {
+    msgEl.innerHTML = '⚠ ชื่อตำบลนี้ซ้ำกันมากกว่า 1 อำเภอ — กดเลือกอำเภอที่ถูกต้อง: ';
+
+    pendingAmbiguousMatches.forEach(chip => {
+      const group = chip.closest('.amphoe-group');
+      const amphoeName = group ? group.dataset.amphoe : '';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = amphoeName;
+      btn.style.cssText = 'margin:4px 6px 0 0; padding:3px 10px; font-size:12px; border-radius:12px; border:1px solid #b45309; background:#fff; color:#b45309; cursor:pointer;';
+      btn.addEventListener('click', () => {
+        chip.click();
+        if (group) group.classList.add('expanded');
+        msgEl.style.color = '#16a34a';
+        msgEl.textContent = `✓ เลือก ${amphoeName} ให้แล้ว`;
+        setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
+      });
+      msgEl.appendChild(btn);
+    });
+    return; // ไม่ตั้งเวลาลบข้อความอัตโนมัติ เพราะรอให้ผู้ใช้กดเลือกก่อน
+  }
+
+  if (status === 'linked') {
     msgEl.style.color = '#16a34a';
     msgEl.textContent = '✓ เลือกตำบล/อำเภอ/สภ. ให้อัตโนมัติแล้ว';
   } else {
@@ -787,20 +808,24 @@ function showVillageLinkFeedback(status) {
   setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 8000);
 }
 
+let pendingAmbiguousMatches = []; // เก็บชิพที่ชื่อซ้ำกันไว้ชั่วคราว รอผู้ใช้เลือกเองว่าใช่อำเภอไหน (ใช้เฉพาะกรณีจับคู่อำเภออัตโนมัติไม่ได้จริงๆ)
+
 /**
  * ค้นหาชิพตำบลที่ชื่อตรงกับ subdistrict ที่ได้จากผลค้นหาแผนที่ แล้วเลือกให้อัตโนมัติ
  * เทียบแบบยืดหยุ่น (ตัดคำนำหน้า "ต./ตำบล" ออกก่อน แล้วเทียบตรงเป๊ะก่อน
  * ถ้าไม่เจอค่อยลองเทียบแบบ "มีคำนี้อยู่ในกัน" กันกรณีสะกด/เว้นวรรคไม่ตรงเป๊ะ)
  *
- * รองรับกรณีชื่อตำบลซ้ำกันข้ามอำเภอ (เช่น "โพนทอง" มีทั้ง อ.บ้านแพง และ อ.เรณูนคร)
- * โดยใช้ชื่ออำเภอที่ได้จากผลค้นหามาช่วยตัดสินว่าจะเลือกชิพไหน ถ้าให้ districtName มาด้วย
+ * ถ้าชื่อตำบลซ้ำกันมากกว่า 1 อำเภอ (เช่น "โพนทอง" มีทั้ง อ.บ้านแพง และ อ.เรณูนคร)
+ * จะใช้ชื่ออำเภอที่ Longdo Map ให้มา (districtName) จับคู่ให้อัตโนมัติก่อนเป็นหลัก
+ * ให้ผู้ใช้เลือกเองก็ต่อเมื่อจับคู่อำเภอไม่ได้จริงๆ เท่านั้น (เช่น ไม่มีข้อมูลอำเภอมาด้วยเลย)
  *
- * คืนค่าเป็นสถานะ: 'linked' (สำเร็จชัวร์) | 'ambiguous' (ชื่อซ้ำ เลือกให้เบื้องต้นแต่ควรเช็คซ้ำ) | 'notfound' (ไม่พบเลย)
+ * คืนค่าเป็นสถานะ: 'linked' (สำเร็จชัวร์) | 'ambiguous' (ชื่อซ้ำ จับคู่อำเภอไม่ได้ รอผู้ใช้เลือกเอง) | 'notfound' (ไม่พบเลย)
  */
 function selectTambonChipByName(subdistrictName, districtName) {
   const normalized = subdistrictName.trim().replace(/^ต\.\s*/, '').replace(/^ตำบล\s*/, '');
   if (!normalized) return 'notfound';
-  const normalizedDistrict = (districtName || '').trim().replace(/^อ\.\s*/, '').replace(/^อำเภอ\s*/, '');
+  // ตัดคำนำหน้า "อ." / "อำเภอ" และช่องว่างหัวท้ายออก ก่อนเทียบชื่ออำเภอ
+  const normalizedDistrict = (districtName || '').trim().replace(/^อำเภอ\s*/, '').replace(/^อ\.\s*/, '').trim();
   const chips = document.querySelectorAll('.tambon-group .chip');
 
   function selectChip(chip) {
@@ -821,21 +846,20 @@ function selectTambonChipByName(subdistrictName, districtName) {
   }
 
   if (exactMatches.length > 1) {
-    // ชื่อตำบลซ้ำกันมากกว่า 1 อำเภอ — ใช้ชื่ออำเภอจากผลค้นหาช่วยเลือกให้ตรง
-    let chosenChip = null;
+    // ชื่อตำบลซ้ำกันมากกว่า 1 อำเภอ — ใช้ชื่ออำเภอจาก Longdo Map จับคู่ให้ก่อน
     if (normalizedDistrict) {
-      chosenChip = exactMatches.find(chip => {
+      const matchedByDistrict = exactMatches.find(chip => {
         const group = chip.closest('.amphoe-group');
-        const amphoeName = (group ? group.dataset.amphoe : '').replace(/^อ\.\s*/, '');
-        return amphoeName === normalizedDistrict || amphoeName.includes(normalizedDistrict) || normalizedDistrict.includes(amphoeName);
+        const amphoeName = (group ? group.dataset.amphoe : '').replace(/^อำเภอ\s*/, '').replace(/^อ\.\s*/, '').trim();
+        return amphoeName === normalizedDistrict;
       });
+      if (matchedByDistrict) {
+        selectChip(matchedByDistrict);
+        return 'linked';
+      }
     }
-    if (chosenChip) {
-      selectChip(chosenChip);
-      return 'linked'; // เจออำเภอที่ตรงกันจริง ถือว่าชัวร์
-    }
-    // หาไม่ได้ว่าอำเภอไหน — เลือกตัวแรกไปก่อนแต่เตือนให้เช็คซ้ำ
-    selectChip(exactMatches[0]);
+    // จับคู่อำเภอไม่ได้จริงๆ (ไม่มีข้อมูลอำเภอมา หรือชื่อไม่ตรงกับที่มีในระบบเป๊ะๆ) — ให้ผู้ใช้เลือกเอง
+    pendingAmbiguousMatches = exactMatches;
     return 'ambiguous';
   }
 
