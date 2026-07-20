@@ -22,6 +22,8 @@
   .officer-phone { font-size:12px; color:#9ca3af; }
   .duty-btn { background:#7a1128; color:#fff; border:none; border-radius:20px; padding:8px 16px; font-size:13px; cursor:pointer; white-space:nowrap; }
   .duty-btn.active { background:#16a34a; }
+  .delete-officer-btn { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; border-radius:50%; width:28px; height:28px; font-size:13px; cursor:pointer; flex-shrink:0; }
+  .delete-officer-btn:hover { background:#fecaca; }
   .add-row { display:flex; gap:8px; margin-top:12px; }
   input[type=text] { flex:1; padding:10px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; font-family:inherit; }
   .add-btn { background:#374151; color:#fff; border:none; border-radius:8px; padding:10px 14px; font-size:13px; cursor:pointer; }
@@ -118,11 +120,36 @@ function renderOfficers() {
         <div class="officer-name">${officer.name || '(ไม่มีชื่อ)'}</div>
         <div class="officer-phone">${officer.phone || ''}</div>
       </div>
-      <button class="duty-btn ${isTapped ? 'active' : ''}">${isTapped ? '✓ เวรสื่อสารวันนี้' : 'ฉันเข้าเวร'}</button>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="duty-btn ${isTapped ? 'active' : ''}">${isTapped ? '✓ เวรสื่อสารวันนี้' : 'ฉันเข้าเวร'}</button>
+        <button class="delete-officer-btn" title="ลบรายชื่อนี้">✕</button>
+      </div>
     `;
     row.querySelector('.duty-btn').addEventListener('click', () => markOnDuty(idx));
+    row.querySelector('.delete-officer-btn').addEventListener('click', () => deleteOfficer(idx));
     listBox.appendChild(row);
   });
+}
+
+async function deleteOfficer(idx) {
+  const officers = allDutyData[selectedStation] || [];
+  const officer = officers[idx];
+  if (!officer) return;
+  if (!confirm(`ลบรายชื่อ "${officer.name}" ออกจากรายชื่อเวรสื่อสารของ ${selectedStation} ใช่หรือไม่?`)) return;
+
+  officers.splice(idx, 1);
+  allDutyData[selectedStation] = officers;
+
+  // ถ้าลบคนที่กำลังโชว์เขียวอยู่ในรอบนี้ ให้ล้างสถานะที่จำไว้ด้วย
+  if (tappedThisSession[selectedStation] === idx) {
+    delete tappedThisSession[selectedStation];
+  } else if (tappedThisSession[selectedStation] > idx) {
+    tappedThisSession[selectedStation] -= 1; // เลื่อน index ตามลำดับที่เปลี่ยนไปหลังลบ
+  }
+
+  renderOfficers();
+  await saveToServer();
+  flashStatus(`✓ ลบรายชื่อ "${officer.name}" แล้ว`);
 }
 
 async function markOnDuty(idx) {
