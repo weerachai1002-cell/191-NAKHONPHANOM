@@ -539,6 +539,20 @@
     <input type="text" id="reporterName" placeholder="ชื่อ-นามสกุล">
   </div>
   <div id="pastePhoneMsg" style="font-size:12px; margin-top:4px;"></div>
+  <div id="phoneFlagWarning" style="display:none; margin-top:8px; padding:10px 14px; border-radius:8px; font-size:14px; font-weight:700;"></div>
+  <div style="text-align:right; margin-top:6px;">
+    <button type="button" id="flagPhoneBtn" class="secondary" style="font-size:12px; padding:5px 10px;">🚩 บันทึกเบอร์นี้ (ก่อกวน / จิตเวช)</button>
+  </div>
+  <div id="flagPhonePanel" style="display:none; margin-top:8px; padding:12px 14px; border:1px solid #fed7aa; background:#fff7ed; border-radius:8px;">
+    <div style="font-weight:700; font-size:13px; margin-bottom:8px; color:#c2410c;">บันทึกเบอร์ <span id="flagPhoneNumberLabel"></span> ไว้ว่า:</div>
+    <label style="display:block; margin-bottom:6px; cursor:pointer;"><input type="radio" name="flagType" value="nuisance" checked> 📵 ชอบโทรมาก่อกวน</label>
+    <label style="display:block; margin-bottom:8px; cursor:pointer;"><input type="radio" name="flagType" value="psych"> 🧠 ผู้ป่วยจิตเวช</label>
+    <input type="text" id="flagPhoneNote" placeholder="หมายเหตุเพิ่มเติม (ไม่บังคับ) เช่น ชื่อ/อาการ/ข้อควรระวัง" style="width:100%; box-sizing:border-box; margin-bottom:8px;">
+    <div style="display:flex; gap:8px;">
+      <button type="button" id="flagPhoneSaveBtn">💾 บันทึก</button>
+      <button type="button" id="flagPhoneCancelBtn" class="secondary">ยกเลิก</button>
+    </div>
+  </div>
 
   <span class="field-label">หมายเหตุเพิ่มเติม (เลือกได้มากกว่า 1 ข้อ)</span>
   <div class="note-item">
@@ -603,6 +617,12 @@
     <p style="font-size:12.5px; color:#9ca3af; margin-top:16px;">กดที่ชื่อ สภ. ด้านล่าง เพื่อดู/แก้ไขรายชื่อเวรสื่อสารของ สภ. นั้น</p>
 
     <div id="dutyStationsList"></div>
+
+    <hr style="margin:28px 0; border:none; border-top:1px solid #e5e7eb;">
+
+    <h3 style="color:#7a1128;">🚩 เบอร์ผู้แจ้งที่บันทึกไว้ (ก่อกวน / จิตเวช)</h3>
+    <p style="font-size:13px; color:#6b7280; margin-top:-8px;">เมื่อกรอก/วางเบอร์ในหน้ารับแจ้งเหตุที่ตรงกับรายการนี้ ระบบจะขึ้นแจ้งเตือนทันที (ถ้าเป็นจิตเวชจะติ๊กหมายเหตุกรณีจิตเวชให้ด้วย) — แก้หมายเหตุหรือลบเบอร์ได้ที่นี่</p>
+    <div id="flaggedNumbersList"></div>
   </div><!-- end page-settings -->
 
 </div>
@@ -900,6 +920,7 @@ document.addEventListener('click', (e) => {
     const phoneField = document.getElementById('reporterPhone');
     if (phoneField && finalNumber) {
       phoneField.value = finalNumber;
+      phoneField.dispatchEvent(new Event('input'));
       phoneField.style.background = '#dcfce7'; // ไฮไลท์เขียวอ่อนชั่วคราวให้เห็นว่าเติมอัตโนมัติ
       setTimeout(() => { phoneField.style.background = ''; }, 3000);
     }
@@ -978,6 +999,7 @@ document.getElementById('pastePhoneBtn').addEventListener('click', async () => {
     }
 
     document.getElementById('reporterPhone').value = finalNumber;
+    document.getElementById('reporterPhone').dispatchEvent(new Event('input'));
     msgEl.textContent = `✓ วางเบอร์ "${finalNumber}" แล้ว`;
     msgEl.style.color = '#16a34a';
     setTimeout(() => { msgEl.textContent = ''; }, 3000);
@@ -1420,6 +1442,7 @@ function clearAll() {
   document.getElementById('village').value = '';
   document.getElementById('amphoe').value = '';
   document.getElementById('reporterPhone').value = '';
+  if (typeof checkPhoneFlag === 'function') { checkPhoneFlag(); document.getElementById('flagPhonePanel').style.display = 'none'; }
   document.getElementById('reporterName').value = '';
   document.getElementById('note1').checked = true;
   document.getElementById('note2').checked = false;
@@ -1482,6 +1505,7 @@ function showSettingsTab() {
   renderPsychKeywordsUI();
   renderDutyStationSelect();
   renderDutyOfficerSettingsList();
+  renderFlaggedNumbersList();
 }
 tabSettingsBtn.addEventListener('click', showSettingsTab);
 backToIncidentBtn.addEventListener('click', showIncidentTab);
@@ -1803,6 +1827,126 @@ function renderDutyOfficerRowsFor(stationName) {
       updateStationPhoneDisplay();
     });
     listBox.appendChild(row);
+  });
+}
+
+// ===== บันทึกเบอร์ผู้แจ้ง: ชอบก่อกวน / ผู้ป่วยจิตเวช (ซิงค์ข้ามเครื่องผ่าน Apps Script) =====
+const FLAGGED_STORAGE_KEY = 'flaggedNumbers_nakhonphanom191_v1';
+const FLAG_LABELS = { nuisance: '📵 ชอบโทรมาก่อกวน', psych: '🧠 ผู้ป่วยจิตเวช' };
+
+function normalizePhone(p) { return (p || '').replace(/\D/g, ''); }
+
+function loadFlaggedLocal() {
+  try { const s = localStorage.getItem(FLAGGED_STORAGE_KEY); if (s) return JSON.parse(s); } catch (e) {}
+  return {};
+}
+let FLAGGED_NUMBERS = loadFlaggedLocal();
+
+function saveFlaggedNumbers() {
+  try { localStorage.setItem(FLAGGED_STORAGE_KEY, JSON.stringify(FLAGGED_NUMBERS)); } catch (e) {}
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'action=saveFlaggedNumbers&data=' + encodeURIComponent(JSON.stringify(FLAGGED_NUMBERS))
+  }).catch(() => { /* ถ้าส่งไม่สำเร็จ เครื่องนี้ยังมีข้อมูลจาก cache */ });
+}
+
+fetch(APPS_SCRIPT_URL + '?action=listFlaggedNumbers')
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === 'ok' && data.flagged && typeof data.flagged === 'object') {
+      FLAGGED_NUMBERS = data.flagged;
+      try { localStorage.setItem(FLAGGED_STORAGE_KEY, JSON.stringify(FLAGGED_NUMBERS)); } catch (e) {}
+      checkPhoneFlag();
+      if (pageSettings.style.display !== 'none') renderFlaggedNumbersList();
+    }
+  })
+  .catch(() => {});
+
+// เช็คเบอร์ที่กรอกอยู่ว่าเคยถูกบันทึกไว้หรือไม่ แล้วขึ้นแจ้งเตือน
+function checkPhoneFlag() {
+  const box = document.getElementById('phoneFlagWarning');
+  const num = normalizePhone(document.getElementById('reporterPhone').value);
+  const entry = num.length >= 6 ? FLAGGED_NUMBERS[num] : null;
+  if (!entry) { box.style.display = 'none'; box.textContent = ''; return; }
+
+  const isPsych = entry.type === 'psych';
+  box.style.display = 'block';
+  box.style.background = isPsych ? '#f5f3ff' : '#fef2f2';
+  box.style.border = '2px solid ' + (isPsych ? '#7c3aed' : '#dc2626');
+  box.style.color = isPsych ? '#5b21b6' : '#b91c1c';
+  box.textContent = `⚠ เบอร์นี้เคยถูกบันทึกไว้ว่า: ${FLAG_LABELS[entry.type] || entry.type}` +
+    (entry.note ? ` — ${entry.note}` : '') + (entry.date ? ` (บันทึกเมื่อ ${entry.date})` : '');
+
+  // เบอร์ผู้ป่วยจิตเวช → ติ๊กหมายเหตุกรณีจิตเวชให้อัตโนมัติ
+  if (isPsych) document.getElementById('note2').checked = true;
+}
+document.getElementById('reporterPhone').addEventListener('input', checkPhoneFlag);
+
+// ปุ่ม/แผงบันทึกเบอร์
+const flagPanel = document.getElementById('flagPhonePanel');
+document.getElementById('flagPhoneBtn').addEventListener('click', () => {
+  const num = normalizePhone(document.getElementById('reporterPhone').value);
+  if (num.length < 6) { alert('กรุณากรอกเบอร์ผู้แจ้งก่อน'); return; }
+  document.getElementById('flagPhoneNumberLabel').textContent = document.getElementById('reporterPhone').value.trim();
+  const existing = FLAGGED_NUMBERS[num];
+  if (existing) {
+    document.querySelector(`input[name="flagType"][value="${existing.type}"]`).checked = true;
+    document.getElementById('flagPhoneNote').value = existing.note || '';
+  } else {
+    document.querySelector('input[name="flagType"][value="nuisance"]').checked = true;
+    document.getElementById('flagPhoneNote').value = '';
+  }
+  flagPanel.style.display = 'block';
+});
+document.getElementById('flagPhoneCancelBtn').addEventListener('click', () => { flagPanel.style.display = 'none'; });
+document.getElementById('flagPhoneSaveBtn').addEventListener('click', () => {
+  const num = normalizePhone(document.getElementById('reporterPhone').value);
+  if (num.length < 6) return;
+  const type = document.querySelector('input[name="flagType"]:checked').value;
+  const p = getThaiNowParts();
+  const dateStr = `${parseInt(p.day, 10)}/${parseInt(p.month, 10)}/${parseInt(p.year, 10) + 543}`;
+  FLAGGED_NUMBERS[num] = { type, note: document.getElementById('flagPhoneNote').value.trim(), date: dateStr };
+  saveFlaggedNumbers();
+  flagPanel.style.display = 'none';
+  checkPhoneFlag();
+  flash('✓ บันทึกเบอร์นี้แล้ว');
+});
+
+// หน้าตั้งค่า: รายการเบอร์ที่บันทึกไว้ (แก้หมายเหตุ/เปลี่ยนประเภท/ลบ)
+function renderFlaggedNumbersList() {
+  const box = document.getElementById('flaggedNumbersList');
+  const keys = Object.keys(FLAGGED_NUMBERS);
+  box.innerHTML = '';
+  if (!keys.length) {
+    box.innerHTML = '<p style="font-size:13px; color:#9ca3af;">ยังไม่มีเบอร์ที่บันทึกไว้ — บันทึกได้จากปุ่ม "🚩 บันทึกเบอร์นี้" ใต้ช่องเบอร์ผู้แจ้งในหน้ารับแจ้งเหตุ</p>';
+    return;
+  }
+  keys.forEach(num => {
+    const e = FLAGGED_NUMBERS[num];
+    const row = document.createElement('div');
+    row.className = 'note-item';
+    row.innerHTML = `
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <b style="min-width:110px;">${num}</b>
+        <select class="flag-type-select" style="padding:6px; border:1px solid #d1d5db; border-radius:6px;">
+          <option value="nuisance" ${e.type === 'nuisance' ? 'selected' : ''}>ชอบก่อกวน</option>
+          <option value="psych" ${e.type === 'psych' ? 'selected' : ''}>ผู้ป่วยจิตเวช</option>
+        </select>
+        <input type="text" class="flag-note-input" placeholder="หมายเหตุ" value="${(e.note || '').replace(/"/g, '&quot;')}" style="flex:1; min-width:140px;">
+        <button type="button" class="clear-btn flag-del-btn" style="margin-left:0;">✕</button>
+      </div>
+      <div style="font-size:11.5px; color:#9ca3af; margin-top:2px;">${e.date ? 'บันทึกเมื่อ ' + e.date : ''}</div>`;
+    row.querySelector('.flag-type-select').addEventListener('change', ev => { e.type = ev.target.value; saveFlaggedNumbers(); checkPhoneFlag(); });
+    row.querySelector('.flag-note-input').addEventListener('input', ev => { e.note = ev.target.value; saveFlaggedNumbers(); checkPhoneFlag(); });
+    row.querySelector('.flag-del-btn').addEventListener('click', () => {
+      if (!confirm(`ลบเบอร์ ${num} ออกจากรายการที่บันทึกไว้ใช่หรือไม่?`)) return;
+      delete FLAGGED_NUMBERS[num];
+      saveFlaggedNumbers();
+      renderFlaggedNumbersList();
+      checkPhoneFlag();
+    });
+    box.appendChild(row);
   });
 }
 </script>
