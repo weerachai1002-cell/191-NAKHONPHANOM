@@ -543,6 +543,7 @@
   <div style="text-align:right; margin-top:6px;">
     <button type="button" id="flagPhoneBtn" class="secondary" style="font-size:12px; padding:5px 10px;">🚩 บันทึกเบอร์นี้ (ก่อกวน / จิตเวช)</button>
   </div>
+  <div id="flagSyncStatus" style="font-size:12px; text-align:right; margin-top:4px;"></div>
   <div id="flagPhonePanel" style="display:none; margin-top:8px; padding:12px 14px; border:1px solid #fed7aa; background:#fff7ed; border-radius:8px;">
     <div style="font-weight:700; font-size:13px; margin-bottom:8px; color:#c2410c;">บันทึกเบอร์ <span id="flagPhoneNumberLabel"></span> ไว้ว่า:</div>
     <label style="display:block; margin-bottom:6px; cursor:pointer;"><input type="radio" name="flagType" value="nuisance" checked> 📵 ชอบโทรมาก่อกวน</label>
@@ -622,6 +623,7 @@
 
     <h3 style="color:#7a1128;">🚩 เบอร์ผู้แจ้งที่บันทึกไว้ (ก่อกวน / จิตเวช)</h3>
     <p style="font-size:13px; color:#6b7280; margin-top:-8px;">เมื่อกรอก/วางเบอร์ในหน้ารับแจ้งเหตุที่ตรงกับรายการนี้ ระบบจะขึ้นแจ้งเตือนทันที (ถ้าเป็นจิตเวชจะติ๊กหมายเหตุกรณีจิตเวชให้ด้วย) — แก้หมายเหตุหรือลบเบอร์ได้ที่นี่</p>
+    <div id="flagSyncStatusSettings" style="font-size:12.5px; margin-bottom:8px;"></div>
     <div id="flaggedNumbersList"></div>
   </div><!-- end page-settings -->
 
@@ -1834,34 +1836,72 @@ function renderDutyOfficerRowsFor(stationName) {
 const FLAGGED_STORAGE_KEY = 'flaggedNumbers_nakhonphanom191_v1';
 const FLAG_LABELS = { nuisance: '📵 ชอบโทรมาก่อกวน', psych: '🧠 ผู้ป่วยจิตเวช' };
 
-function normalizePhone(p) { return (p || '').replace(/\D/g, ''); }
+function normalizePhone(p) {
+  // เก็บเฉพาะตัวเลข และแปลงรหัสประเทศไทยให้เป็นรูปแบบ 0xxxxxxxxx เสมอ
+  // (เบอร์จากตู้สาขา/Phone Manager อาจมาเป็น +66812345678, 66812345678 หรือ 0066812345678)
+  let d = (p || '').replace(/\D/g, '');
+  if (d.startsWith('0066')) d = '0' + d.slice(4);
+  else if (d.startsWith('66') && d.length >= 11) d = '0' + d.slice(2);
+  return d;
+}
 
 function loadFlaggedLocal() {
   try { const s = localStorage.getItem(FLAGGED_STORAGE_KEY); if (s) return JSON.parse(s); } catch (e) {}
   return {};
 }
-let FLAGGED_NUMBERS = loadFlaggedLocal();
+function normalizeFlaggedKeys(obj) {
+  const out = {};
+  Object.keys(obj || {}).forEach(k => { out[normalizePhone(k) || k] = obj[k]; });
+  return out;
+}
+let FLAGGED_NUMBERS = normalizeFlaggedKeys(loadFlaggedLocal());
+
+function setFlagSyncStatus(ok, msg) {
+  ['flagSyncStatus', 'flagSyncStatusSettings'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.color = ok ? '#16a34a' : '#b91c1c';
+    el.textContent = msg;
+  });
+}
 
 function saveFlaggedNumbers() {
   try { localStorage.setItem(FLAGGED_STORAGE_KEY, JSON.stringify(FLAGGED_NUMBERS)); } catch (e) {}
+  setFlagSyncStatus(true, 'กำลังซิงค์ขึ้นส่วนกลาง...');
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'action=saveFlaggedNumbers&data=' + encodeURIComponent(JSON.stringify(FLAGGED_NUMBERS))
-  }).catch(() => { /* ถ้าส่งไม่สำเร็จ เครื่องนี้ยังมีข้อมูลจาก cache */ });
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'ok') setFlagSyncStatus(true, '✓ ซิงค์ขึ้นส่วนกลางแล้ว เครื่องอื่นจะเห็นภายใน 30 วินาที');
+      else setFlagSyncStatus(false, '⚠ ซิงค์ไม่สำเร็จ: ' + (data.message || 'ไม่ทราบสาเหตุ') + ' — ต้อง Deploy Apps Script เวอร์ชันใหม่ (New version) ก่อน');
+    })
+    .catch(() => setFlagSyncStatus(false, '⚠ ซิงค์ไม่สำเร็จ (เชื่อมต่อส่วนกลางไม่ได้) — บันทึกไว้เฉพาะเครื่องนี้'));
 }
 
-fetch(APPS_SCRIPT_URL + '?action=listFlaggedNumbers')
-  .then(res => res.json())
-  .then(data => {
-    if (data.status === 'ok' && data.flagged && typeof data.flagged === 'object') {
-      FLAGGED_NUMBERS = data.flagged;
-      try { localStorage.setItem(FLAGGED_STORAGE_KEY, JSON.stringify(FLAGGED_NUMBERS)); } catch (e) {}
-      checkPhoneFlag();
-      if (pageSettings.style.display !== 'none') renderFlaggedNumbersList();
-    }
-  })
-  .catch(() => {});
+// ดึงรายการล่าสุดจากส่วนกลาง (ตอนเปิดหน้า และทุก 30 วินาที เพื่อให้เครื่องอื่นเห็นการเปลี่ยนแปลงโดยไม่ต้องรีเฟรช)
+function pullFlaggedNumbers() {
+  fetch(APPS_SCRIPT_URL + '?action=listFlaggedNumbers')
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'ok' && data.flagged && typeof data.flagged === 'object') {
+        const incoming = normalizeFlaggedKeys(data.flagged);
+        if (JSON.stringify(incoming) !== JSON.stringify(FLAGGED_NUMBERS)) {
+          FLAGGED_NUMBERS = incoming;
+          try { localStorage.setItem(FLAGGED_STORAGE_KEY, JSON.stringify(FLAGGED_NUMBERS)); } catch (e) {}
+          checkPhoneFlag();
+          if (pageSettings.style.display !== 'none') renderFlaggedNumbersList();
+        }
+      } else if (data.status === 'ok') {
+        setFlagSyncStatus(false, '⚠ Apps Script ส่วนกลางยังเป็นเวอร์ชันเก่า (ยังไม่รู้จักคำสั่งบันทึกเบอร์) — ต้อง Deploy เวอร์ชันใหม่ เครื่องอื่นถึงจะเห็นเบอร์ที่บันทึก');
+      }
+    })
+    .catch(() => {});
+}
+pullFlaggedNumbers();
+setInterval(pullFlaggedNumbers, 30000);
 
 // เช็คเบอร์ที่กรอกอยู่ว่าเคยถูกบันทึกไว้หรือไม่ แล้วขึ้นแจ้งเตือน
 function checkPhoneFlag() {
