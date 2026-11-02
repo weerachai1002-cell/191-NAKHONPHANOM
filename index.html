@@ -624,6 +624,10 @@
     <h3 style="color:#7a1128;">🚩 เบอร์ผู้แจ้งที่บันทึกไว้ (ก่อกวน / จิตเวช)</h3>
     <p style="font-size:13px; color:#6b7280; margin-top:-8px;">เมื่อกรอก/วางเบอร์ในหน้ารับแจ้งเหตุที่ตรงกับรายการนี้ ระบบจะขึ้นแจ้งเตือนทันที (ถ้าเป็นจิตเวชจะติ๊กหมายเหตุกรณีจิตเวชให้ด้วย) — แก้หมายเหตุหรือลบเบอร์ได้ที่นี่</p>
     <div id="flagSyncStatusSettings" style="font-size:12.5px; margin-bottom:8px;"></div>
+    <div style="margin-bottom:10px;">
+      <button type="button" id="testBackendBtn" class="secondary" style="font-size:12.5px; padding:6px 12px;">🔍 ทดสอบการเชื่อมต่อส่วนกลาง</button>
+      <div id="testBackendResult" style="font-size:12.5px; margin-top:6px; word-break:break-all;"></div>
+    </div>
     <div id="flaggedNumbersList"></div>
   </div><!-- end page-settings -->
 
@@ -1989,6 +1993,30 @@ function renderFlaggedNumbersList() {
     box.appendChild(row);
   });
 }
+
+// ปุ่มทดสอบ: ดูว่า Apps Script ที่เว็บเรียกอยู่ตอบเป็นเวอร์ชันไหน (ช่วยไล่ปัญหา Deploy ไม่ตรง URL)
+document.getElementById('testBackendBtn').addEventListener('click', async () => {
+  const out = document.getElementById('testBackendResult');
+  const idTail = APPS_SCRIPT_URL.split('/s/')[1] ? APPS_SCRIPT_URL.split('/s/')[1].split('/')[0] : '';
+  out.style.color = '#374151';
+  out.textContent = 'กำลังทดสอบ...';
+  try {
+    const res = await fetch(APPS_SCRIPT_URL + '?action=listFlaggedNumbers&t=' + Date.now());
+    const data = await res.json();
+    const urlInfo = `\nURL ที่เว็บใช้: ...${idTail.slice(0, 12)}...${idTail.slice(-10)}`;
+    if (data.status === 'ok' && data.flagged !== undefined) {
+      out.style.color = '#16a34a';
+      out.textContent = `✓ ส่วนกลางเป็นเวอร์ชันใหม่แล้ว (version: ${data.version || 'ไม่ระบุ'}, เบอร์ที่บันทึกไว้ ${Object.keys(data.flagged).length} เบอร์)` + urlInfo;
+    } else {
+      out.style.color = '#b91c1c';
+      out.textContent = '⚠ ส่วนกลางตอบกลับมาแต่เป็นเวอร์ชันเก่า: ' + JSON.stringify(data).slice(0, 160) +
+        ' — URL นี้ยังไม่ได้ผูกกับโค้ดใหม่ (ตรวจว่า Deploy แบบ New version ในรายการที่มี Deployment ID ตรงกับ URL ด้านล่าง)' + urlInfo;
+    }
+  } catch (e) {
+    out.style.color = '#b91c1c';
+    out.textContent = '⚠ เชื่อมต่อส่วนกลางไม่ได้: ' + e.message + ' (ตรวจว่า Deploy ตั้ง Who has access = Anyone)';
+  }
+});
 </script>
 </body>
 </html>
